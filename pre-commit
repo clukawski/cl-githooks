@@ -1,0 +1,135 @@
+#!/usr/bin/env python2
+
+from __future__ import print_function
+import sys
+import subprocess
+import collections
+from distutils.spawn import find_executable
+
+class PreHook:
+    """Constructor for PreHook class"""
+    def __init__(self, hookconfig):
+        self.warnfiles = hookconfig['warnfiles']
+
+        self.lintext = hookconfig['linter']['extension']
+        self.linter = hookconfig['linter']['executable']
+        self.lintargs = hookconfig['linter']['arguments']
+
+        self.exitstatus = True
+
+        self.red = '\033[91m'
+        self.yellow = '\033[93m'
+        self.green = '\033[92m'
+        self.resetc = '\033[0m'
+
+    """
+    Returns the output of a shell command and exit status
+
+    Keyword arguments:
+    binname -- name of the command executable to run
+    args -- arguments for command to run
+    """
+    def cmd_output(self, binname, args):
+        returnstatus = collections.namedtuple('ReturnStatus', ['output', 'status'])
+
+        try:
+            binfile = find_executable(binname);
+            cmd = [binfile] + args
+            rawout = subprocess.check_output(cmd, stderr=subprocess.PIPE).encode("ascii")
+            output = rawout.split('\n')
+            output = filter(None, output)
+            if len(output) == 1:
+                output = output[0]
+
+            return returnstatus(output, True)
+        except subprocess.CalledProcessError as e:
+            return returnstatus(e.output, False)
+
+    """Sets the exit status if failure"""
+    def cmd_exitstatus(self, rawout):
+        if rawout.status == False:
+            self.exitstatus = rawout.status
+
+    """Returns tuple containing list of changed staged files and success exit status"""
+    def changed_files(self):
+        changed = self.cmd_output(
+            'git',
+            [
+                '--no-pager',
+                'diff',
+                '--name-only',
+                '--cached'
+            ]
+        )
+
+        return changed
+
+    """Runs the linter configured in the constructor"""
+    def lint_files(self):
+        changed = self.changed_files()
+        self.cmd_exitstatus(changed)
+
+        checkfiles = [x for x in changed.output if self.lintext in x]
+
+        if checkfiles:
+            lintcmd = ' '.join([self.linter]+self.lintargs)
+            print('Running '+lintcmd+' on changed files:\n')
+            for check in checkfiles:
+                cmdargs = self.lintargs + [check]
+                linted = self.cmd_output('php', cmdargs)
+                if linted.status:
+                    color = self.green
+                else:
+                    color = self.red
+
+                print('\t'+self.linter+': '+color+linted.output.strip('\n')+self.resetc)
+                self.cmd_exitstatus(linted)
+
+    """Looks for files specified to warn for, notifies and sets failure exit status if any are found."""
+    def warn_files(self):
+        changed = self.changed_files()
+        self.cmd_exitstatus(changed)
+
+        warnings = [x for x in self.warnfiles if x in changed.output]
+
+        if warnings:
+            print('Please double check these files before committing:')
+            print('Once you are sure of these changes, use --no-verify.\n')
+
+            for warning in warnings:
+                print('\tfile: '+self.red+warning+self.resetc)
+
+            self.exitstatus = False
+            print('\n', end='')
+
+def main():
+    hookconfig = {
+        'warnfiles': [
+            'src/test.php'
+        ],
+        'linter': {
+            'extension': '.php',
+            'executable': 'php',
+            'arguments': [
+                '-l'
+            ]
+        }
+    }
+
+    try:
+        hook = PreHook(hookconfig)
+        hook.warn_files()
+        hook.lint_files()
+        
+        if hook.exitstatus == False:
+            sys.exit(1)
+        elif hook.exitstatus == True:
+            sys.exit(0)
+    except Exception as e:
+        errtext = 'Incorrect pre-commit hook settings:\n{0}: {1!r}'
+        errformat = errtext.format(type(e).__name__, e.args)
+        print(errformat)
+        exit(1)
+
+if __name__ == "__main__":
+    main()
