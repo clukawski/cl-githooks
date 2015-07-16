@@ -23,26 +23,54 @@ $ chmod +x /path/to/project/.git/hooks/{hookname}
 
 ### pre-commit:
 
-You'll want to edit the dictionary in main()
+This hook will make various checks to your file changes before you commit.
+You'll want to edit the hookconfig dictionary in main() to the tools/language
+you are using.
 
-* warnfiles: list of files you want git to stop/warn you from committing changes to (use --no-verify to override), maybe these files shouldn't change, or you need to take extra care with these.
-* linter:
+Currently the linter/unit test checks only support one language/tool each,
+will add support for multiple passes per check later.
+
+* warnfiles:
+	* list of files you want warnings when committing changes to
+
+* linter: Linter settings
 	* extension: file extension for the linter to use
 	* executable: linter executable
-	* arguments: arguments to pass to the linter 
+	* arguments: arguments to pass to the linter
+* testing: Unit testing settings
+	* executable: unit test tool executable
+	* arguments: arguments to pass to the tool
+    * testoutput: show unit test tool output
+    	* set to True or False 
+* checks: List of enabled checks
+    * lint_files: use the linter check
+    * warn_files: use the file warning check
+    * test_files: use unit test check
 
 ```python
     hookconfig = {
         'warnfiles': [
-            'src/test.php'
+            'src/test.php',
         ],
         'linter': {
-            'extension': '.php',
             'executable': 'php',
+            'extension': '.php',
             'arguments': [
                 '-l'
             ]
-        }
+        },
+        'testing': {
+            'executable': 'phpunit',
+            'arguments': [
+                '-v'
+            ],
+            'testoutput': True
+        },
+        'checks': [
+            'lint_files',
+            'warn_files',
+            'test_files'
+        ]
     }
 
 ```

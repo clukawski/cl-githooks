@@ -11,15 +11,24 @@ class PreHook:
     def __init__(self, hookconfig):
         self.warnfiles = hookconfig['warnfiles']
 
-        self.lintext = hookconfig['linter']['extension']
         self.linter = hookconfig['linter']['executable']
+        self.lintext = hookconfig['linter']['extension']
         self.lintargs = hookconfig['linter']['arguments']
 
+        self.tester = hookconfig['testing']['executable']
+        self.testargs = hookconfig['testing']['arguments']
+        self.testoutput = hookconfig['testing']['testoutput']
+
+        self.checks = hookconfig['checks']
         self.exitstatus = True
 
         self.red = '\033[91m'
+        self.redbold = '\033[1;91m'
         self.yellow = '\033[93m'
         self.green = '\033[92m'
+        self.greenbold = '\033[1;92m'
+        self.blue = '\033[94m'
+        self.bluebold = '\033[1;94m'
         self.resetc = '\033[0m'
 
     """
@@ -29,13 +38,23 @@ class PreHook:
     binname -- name of the command executable to run
     args -- arguments for command to run
     """
-    def cmd_output(self, binname, args):
+    def cmd_output(self, binname, args, show_output = False):
         returnstatus = collections.namedtuple('ReturnStatus', ['output', 'status'])
 
         try:
             binfile = find_executable(binname);
             cmd = [binfile] + args
-            rawout = subprocess.check_output(cmd, stderr=subprocess.PIPE).encode("ascii")
+
+            try:
+                rawout = subprocess.check_output(cmd, stderr=open('/dev/null')).encode("utf-8")
+            except AttributeError as e:
+                errtext = 'Incorrect pre-commit hook settings: executable does not exist.'
+                print(errtext)
+                exit(1)
+
+            if show_output == True:
+                print(rawout)
+
             output = rawout.split('\n')
             output = filter(None, output)
             if len(output) == 1:
@@ -64,7 +83,21 @@ class PreHook:
 
         return changed
 
-    """Runs the linter configured in the constructor"""
+    """Decision dialog for warnfile check"""
+    def decide(self):
+            while True:
+                decision = raw_input().lower()
+                if decision == 'n':
+                    return False
+                if decision == '':
+                    return False
+                elif decision == 'y':
+                    return True
+                else:
+                    print(self.bluebold+'>> Please answer [y/N]:'+self.resetc)
+                    return self.decide()
+
+    """Runs the linter as configured in the constructor"""
     def lint_files(self):
         changed = self.changed_files()
         self.cmd_exitstatus(changed)
@@ -73,10 +106,11 @@ class PreHook:
 
         if checkfiles:
             lintcmd = ' '.join([self.linter]+self.lintargs)
-            print('Running '+lintcmd+' on changed files:\n')
+            print(self.bluebold+'>> Running '+lintcmd+' on files:\n'+self.resetc)
+
             for check in checkfiles:
                 cmdargs = self.lintargs + [check]
-                linted = self.cmd_output('php', cmdargs)
+                linted = self.cmd_output(self.linter, cmdargs)
                 if linted.status:
                     color = self.green
                 else:
@@ -84,6 +118,7 @@ class PreHook:
 
                 print('\t'+self.linter+': '+color+linted.output.strip('\n')+self.resetc)
                 self.cmd_exitstatus(linted)
+                print('\n', end='')
 
     """Looks for files specified to warn for, notifies and sets failure exit status if any are found."""
     def warn_files(self):
@@ -93,33 +128,65 @@ class PreHook:
         warnings = [x for x in self.warnfiles if x in changed.output]
 
         if warnings:
-            print('Please double check these files before committing:')
-            print('Once you are sure of these changes, use --no-verify.\n')
+            print(self.bluebold+'>> You should double check these files before committing:\n'+self.resetc)
 
             for warning in warnings:
                 print('\tfile: '+self.red+warning+self.resetc)
 
-            self.exitstatus = False
-            print('\n', end='')
+            print(self.bluebold+'\n>> Do you want to continue? [y/N]:'+self.resetc)
+            if self.decide() == False:
+                self.exitstatus = False
+
+    """Runs the unit test framework as configured in the constructor"""
+    def test_files(self):
+        print(self.bluebold+'>> Running unit tests...'+self.resetc+'\n')
+        if self.testoutput == True:
+            tested = self.cmd_output(self.tester, self.testargs, self.testoutput)
+        else:
+            print(self.bluebold+'>> Running unit tests...'+self.resetc)
+            tested = self.cmd_output(self.tester, self.testargs, self.testoutput)
+        if tested.status == True:
+            print(self.greenbold+'>> Test Success'+self.resetc)
+        else:
+            print(self.redbold+'>> Test Failure'+self.resetc)
+
+        self.cmd_exitstatus(tested)
+        print('\n', end='')
+
+    """Runs the check functions loaded from configuration"""
+    def run_checks(self):
+        for check in self.checks:
+            getattr(self, check)()
 
 def main():
     hookconfig = {
         'warnfiles': [
-            'src/test.php'
+            'src/test.php',
         ],
         'linter': {
-            'extension': '.php',
             'executable': 'php',
+            'extension': '.php',
             'arguments': [
                 '-l'
             ]
-        }
+        },
+        'testing': {
+            'executable': 'phpunit',
+            'arguments': [
+                '-v'
+            ],
+            'testoutput': True
+        },
+        'checks': [
+            'lint_files',
+            'warn_files',
+            'test_files'
+        ]
     }
 
     try:
         hook = PreHook(hookconfig)
-        hook.warn_files()
-        hook.lint_files()
+        hook.run_checks()
         
         if hook.exitstatus == False:
             sys.exit(1)
