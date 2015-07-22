@@ -116,7 +116,7 @@ class PreHook:
                 else:
                     color = self.red
 
-                print('\t'+self.linter+': '+color+linted.output.strip('\n')+self.resetc)
+                print('\t'+self.linter+': '+color+linted.output[0].strip('\n')+self.resetc)
                 self.cmd_exitstatus(linted)
                 print('\n', end='')
 
