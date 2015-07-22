@@ -58,7 +58,7 @@ class PreHook:
             output = rawout.split('\n')
             output = filter(None, output)
             if len(output) == 1:
-                output = output[0]
+                output = [output[0]]
 
             return returnstatus(output, True)
         except subprocess.CalledProcessError as e:
