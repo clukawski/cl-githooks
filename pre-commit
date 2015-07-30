@@ -77,7 +77,8 @@ class PreHook:
                 '--no-pager',
                 'diff',
                 '--name-only',
-                '--cached'
+                '--cached',
+                '--diff-filter=M'
             ]
         )
 
