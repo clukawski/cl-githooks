@@ -33,15 +33,20 @@ will add support for multiple passes per check later.
 * warnfiles:
 	* list of files you want warnings when committing changes to
 
-* linter: Linter settings
-	* extension: file extension for the linter to use
-	* executable: linter executable
-	* arguments: arguments to pass to the linter
+* linters: Linter settings
+    * list of dictionaries: one for each linter/syntax/checker tool
+      * extension: file extension for the linter to use
+	  * executable: linter executable
+	  * arguments: arguments to pass to the linter
+      * errout: show tool stderr output (some tools will print to stderr instead of stdout)
+        * set to True or False: default False
+      * showout: dump raw output
+        * set to True or False: default False
 * testing: Unit testing settings
 	* executable: unit test tool executable
 	* arguments: arguments to pass to the tool
     * testoutput: show unit test tool output
-    	* set to True or False 
+      * set to True or False 
 * checks: List of enabled checks
     * lint_files: use the linter check
     * warn_files: use the file warning check
@@ -52,13 +57,28 @@ will add support for multiple passes per check later.
         'warnfiles': [
             'src/test.php',
         ],
-        'linter': {
-            'executable': 'php',
-            'extension': '.php',
-            'arguments': [
-                '-l'
-            ]
-        },
+        'linters': [
+            {
+                'executable': 'php',
+                'extension': '.php',
+                'arguments': [
+                    '-l'
+                ],
+                'errout': False,
+                'showout': False
+            },
+            {
+                'executable': 'clang',
+                'extension': '.c',
+                'arguments': [
+                    '-fsyntax-only',
+                    '-Wall',
+                    '-Werror'
+                ],
+                'errout': True,
+                'showout': False
+            }
+        ],
         'testing': {
             'executable': 'phpunit',
             'arguments': [

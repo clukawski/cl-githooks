@@ -11,9 +11,10 @@ class PreHook:
     def __init__(self, hookconfig):
         self.warnfiles = hookconfig['warnfiles']
 
-        self.linter = hookconfig['linter']['executable']
-        self.lintext = hookconfig['linter']['extension']
-        self.lintargs = hookconfig['linter']['arguments']
+        self.linters = []
+
+        for linter in hookconfig['linters']:
+            self.linters.append(linter)
 
         self.tester = hookconfig['testing']['executable']
         self.testargs = hookconfig['testing']['arguments']
@@ -25,6 +26,7 @@ class PreHook:
         self.red = '\033[91m'
         self.redbold = '\033[1;91m'
         self.yellow = '\033[93m'
+        self.yellowbold = '\033[1;93m'
         self.green = '\033[92m'
         self.greenbold = '\033[1;92m'
         self.blue = '\033[94m'
@@ -38,7 +40,7 @@ class PreHook:
     binname -- name of the command executable to run
     args -- arguments for command to run
     """
-    def cmd_output(self, binname, args, show_output = False):
+    def cmd_output(self, binname, args, errout = False, showout = False):
         returnstatus = collections.namedtuple('ReturnStatus', ['output', 'status'])
 
         try:
@@ -46,13 +48,16 @@ class PreHook:
             cmd = [binfile] + args
 
             try:
-                rawout = subprocess.check_output(cmd, stderr=open('/dev/null')).encode("utf-8")
+                if errout:
+                    rawout = subprocess.check_output(cmd, stderr=subprocess.STDOUT).encode("utf-8")
+                else:
+                    rawout = subprocess.check_output(cmd, stderr=open('/dev/null')).encode("utf-8")
             except AttributeError as e:
                 errtext = 'Incorrect pre-commit hook settings: executable does not exist.'
                 print(errtext)
                 exit(1)
 
-            if show_output == True:
+            if showout == True:
                 print(rawout)
 
             output = rawout.split('\n')
@@ -78,7 +83,7 @@ class PreHook:
                 'diff',
                 '--name-only',
                 '--cached',
-                '--diff-filter=M'
+                '--diff-filter=AM'
             ]
         )
 
@@ -103,23 +108,35 @@ class PreHook:
         changed = self.changed_files()
         self.cmd_exitstatus(changed)
 
-        checkfiles = [x for x in changed.output if self.lintext in x]
+        for linter in self.linters:
+            lintfiles = [x for x in changed.output if linter['extension'] in x]
 
-        if checkfiles:
-            lintcmd = ' '.join([self.linter]+self.lintargs)
-            print(self.bluebold+'>> Running '+lintcmd+' on files:\n'+self.resetc)
+            if lintfiles:
+                lintcmd = ' '.join([linter['executable']]+linter['arguments'])
+                print(self.bluebold+'>> Running '+lintcmd+' on files:\n'+self.resetc)
 
-            for check in checkfiles:
-                cmdargs = self.lintargs + [check]
-                linted = self.cmd_output(self.linter, cmdargs)
-                if linted.status:
-                    color = self.green
-                else:
-                    color = self.red
+                for lint in lintfiles:
+                    cmdargs = linter['arguments'] + [lint]
+                    linted = self.cmd_output(linter['executable'], cmdargs, linter['errout'], linter['showout'])
 
-                print('\t'+self.linter+': '+color+linted.output[0].strip('\n')+self.resetc)
-                self.cmd_exitstatus(linted)
-                print('\n', end='')
+                    # If we don't have output, return a message reflecting the exit value.
+                    if not linted.output:
+                        result = 'Success\n' if linted.status else 'Failure\n'
+                    else:
+                        result = ''.join(linted.output)
+
+
+                    if linted.status:
+                        color = self.green
+                    else:
+                        color = self.red
+
+                    print(self.yellowbold+lint+self.resetc+': \n'+color+result+self.resetc)
+                    self.cmd_exitstatus(linted)
+
+                    # Insert a newline if the linter output does not.
+                    if not result.endswith('\n'):
+                        print('\n', end='')
 
     """Looks for files specified to warn for, notifies and sets failure exit status if any are found."""
     def warn_files(self):
@@ -164,13 +181,28 @@ def main():
         'warnfiles': [
             'src/test.php',
         ],
-        'linter': {
-            'executable': 'php',
-            'extension': '.php',
-            'arguments': [
-                '-l'
-            ]
-        },
+        'linters': [
+            {
+                'executable': 'php',
+                'extension': '.php',
+                'arguments': [
+                    '-l'
+                ],
+                'errout': False,
+                'showout': False
+            },
+            {
+                'executable': 'clang',
+                'extension': '.c',
+                'arguments': [
+                    '-fsyntax-only',
+                    '-Wall',
+                    '-Werror'
+                ],
+                'errout': True,
+                'showout': False
+            }
+        ],
         'testing': {
             'executable': 'phpunit',
             'arguments': [
